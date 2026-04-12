@@ -1,0 +1,44 @@
+{
+  "build": {
+    "core": "esp32",
+    "mcu": "esp32s3",
+    "variant": "esp32s3",
+    "extra_flags": [
+      "-DARDUINO_USB_MODE=1",
+      "-DARDUINO_USB_CDC_ON_BOOT=1",
+      "-DARDUINO_USB_MSC_ON_BOOT=1",
+      "-DCONFIG_TINYUSB_ENABLED=1",
+      "-DCONFIG_TINYUSB_MSC_ENABLED=1",
+      "-DCONFIG_TINYUSB_HID_ENABLED=1",
+      "-DCONFIG_TINYUSB_DEVICE_COMPOSITE=1",
+      "-DCONFIG_TINYUSB_DESC_USE_ESPRESSIF=1"
+    ],
+    "f_cpu": "240000000L",
+    "f_flash": "80000000L",
+    "flash_mode": "qio",
+    "arduino": {
+      "ldscript": "esp32s3_out.ld"
+    }
+  },
+  "connectivity": [
+    "wifi",
+    "bluetooth",
+    "usb"
+  ],
+  "debug": {
+    "openocd_target": "esp32s3.cfg"
+  },
+  "frameworks": [
+    "arduino"
+  ],
+  "name": "ESP32-S3 MagicCable (MSC+HID Enabled)",
+  "upload": {
+    "flash_size": "4MB",
+    "maximum_ram_size": 327680,
+    "maximum_size": 4194304,
+    "protocol": "esptool",
+    "speed": 460800
+  },
+  "url": "https://github.com/espressif/arduino-esp32",
+  "vendor": "Wretzelelectonics"
+}
