@@ -1,10 +1,7 @@
 #pragma once
-#include <Arduino.h>
+#include "rf.h"
 
 namespace RFTransmitter {
     void init();
-    void loop();
-    void stop();
-
-    void sendRaw(const uint8_t *data, size_t len);
+    void transmit(const RFFrame &frame);
 }

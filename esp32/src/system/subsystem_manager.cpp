@@ -3,6 +3,7 @@
 #include "../ir/ir.h"
 #include "../button/button.h"
 #include "../rf/rf.h"
+#include "../telemetry/telemetry.h"
 
 SubsystemState SubsystemManager::bleState = SubsystemState::OFF;
 IRState SubsystemManager::irState = IRState::OFF;
@@ -12,26 +13,42 @@ void SubsystemManager::init() {
     // Button always on
     Button::init();
 
-    // IR starts OFF
-    // BLE starts OFF
-    // RF starts OFF
+    // Telemetry always on
+    Telemetry::init();
+
+    // RF subsystem initializes once at boot
+    RF::init();
 }
 
 void SubsystemManager::loop() {
-    // Button always runs
     Button::loop();
 
-    // IR runs only when enabled
+    // Telemetry push mode (1 Hz)
+    static unsigned long lastTelemetry = 0;
+    if (millis() - lastTelemetry >= 1000) {
+        lastTelemetry = millis();
+        TelemetryReading r = Telemetry::read();
+        Serial.printf(
+            "{\"type\":\"telemetry\",\"bus\":%.3f,\"shunt\":%.3f,\"current\":%.3f,\"power\":%.3f}\n",
+            r.busVoltage, r.shuntVoltage, r.current, r.power
+        );
+    }
+
+    // Heartbeat (1 Hz)
+    static unsigned long lastHeartbeat = 0;
+    if (millis() - lastHeartbeat >= 1000) {
+        lastHeartbeat = millis();
+        Serial.println("{\"type\":\"sys\",\"event\":\"heartbeat\"}");
+    }
+
     if (irState == IRState::ON) {
         IR::loop();
     }
 
-    // BLE runs only when enabled
     if (bleState == SubsystemState::ON) {
         ble_loop();
     }
 
-    // RF runs only when enabled
     if (rfState == RFState::ON) {
         RF::loop();
     }
@@ -75,14 +92,14 @@ bool SubsystemManager::isIREnabled() {
 
 void SubsystemManager::enableRF() {
     if (rfState == RFState::OFF) {
-        RF::init();
+        RF::enable();
         rfState = RFState::ON;
     }
 }
 
 void SubsystemManager::disableRF() {
     if (rfState == RFState::ON) {
-        RF::stop();
+        RF::disable();
         rfState = RFState::OFF;
     }
 }

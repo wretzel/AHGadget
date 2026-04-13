@@ -3,6 +3,7 @@
 #include "../ir/ir_transmitter.h"
 #include "../msc/msc_commands.h"
 #include "../hid/hid_ops.h" 
+#include "../rf/rf.h"
 
 namespace CommandDispatch {
 
@@ -108,7 +109,7 @@ void handleCommand(const String& cmd) {
             active ? "on" : "off"
         );
     }
-
+    
     else if (cmd == "rf on") {
         SubsystemManager::enableRF();
         Serial.println("{\"type\":\"sys\",\"subsystem\":\"rf\",\"state\":\"on\"}");
@@ -125,6 +126,73 @@ void handleCommand(const String& cmd) {
             "{\"type\":\"sys\",\"subsystem\":\"rf\",\"state\":\"%s\"}\n",
             active ? "on" : "off"
         );
+    }
+
+
+    // -----------------------------
+    // RF COMMANDS
+    // -----------------------------
+
+    else if (cmd.startsWith("rf_tx_raw")) {
+
+        int pIndex = cmd.indexOf("pulses:");
+        int gIndex = cmd.indexOf("gaps:");
+
+        if (pIndex == -1 || gIndex == -1) {
+            Serial.println("{\"type\":\"error\",\"msg\":\"invalid rf_tx_raw format\"}");
+            return;
+        }
+
+        // Extract and trim
+        String pulseStr = cmd.substring(pIndex + 7, gIndex);
+        pulseStr.trim();
+
+        String gapStr = cmd.substring(gIndex + 5);
+        gapStr.trim();
+
+        static RFFrame frame;
+        frame.count = 0;
+        frame.valid = true;
+
+        // Parse pulses
+        int start = 0;
+        while (true) {
+            int comma = pulseStr.indexOf(',', start);
+            String token = (comma == -1)
+                ? pulseStr.substring(start)
+                : pulseStr.substring(start, comma);
+
+            frame.pulses[frame.count] = token.toInt();
+            frame.count++;
+
+            if (comma == -1) break;
+            start = comma + 1;
+        }
+
+        // Parse gaps
+        start = 0;
+        size_t gapCount = 0;
+        while (true) {
+            int comma = gapStr.indexOf(',', start);
+            String token = (comma == -1)
+                ? gapStr.substring(start)
+                : gapStr.substring(start, comma);
+
+            frame.gaps[gapCount] = token.toInt();
+            gapCount++;
+
+            if (comma == -1) break;
+            start = comma + 1;
+        }
+
+        if (gapCount != frame.count) {
+            Serial.println("{\"type\":\"error\",\"msg\":\"pulse/gap count mismatch\"}");
+            return;
+        }
+
+        RF::transmit(frame);
+
+        Serial.println("{\"type\":\"rf\",\"event\":\"tx_cmd\",\"count\":" + String(frame.count) + "}");
     }
 
     // -----------------------------

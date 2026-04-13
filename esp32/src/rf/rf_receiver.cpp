@@ -1,72 +1,92 @@
 #include "rf_receiver.h"
-#include "rf_pins.h"
-#include <ELECHOUSE_CC1101_SRC_DRV.h>
+
+namespace {
+    const int PIN_RX_DAT = 11;
+    const uint32_t FRAME_GAP_US = 3000;   // realistic for 433 MHz
+
+    volatile uint32_t lastEdge = 0;
+    volatile bool hasEdge = false;
+    volatile uint32_t edgeDt = 0;
+
+    RFFrame frame;
+
+    void resetFrame() {
+        frame.count = 0;
+        frame.valid = false;
+    }
+
+    void finalizeFrame() {
+        if (frame.count > 0)
+            frame.valid = true;
+    }
+
+    void IRAM_ATTR rf_isr() {
+        uint32_t now = micros();
+        edgeDt = now - lastEdge;
+        lastEdge = now;
+
+        // Required on ESP32-S3 to keep CHANGE interrupts alive
+        volatile uint8_t lvl = digitalRead(PIN_RX_DAT);
+
+        hasEdge = true;
+    }
+}
 
 namespace RFReceiver {
 
-static bool initialized = false;
-static float currentFreq = 315.0;
-static unsigned long lastStep = 0;
-static unsigned long lastPrint = 0;
-
 void init() {
-    if (initialized) return;
+    pinMode(PIN_RX_DAT, INPUT);
+    lastEdge = micros();
+    resetFrame();
+}
 
-    ELECHOUSE_cc1101.setSpiPin(
-        CC1101_SCK,
-        CC1101_MISO,
-        CC1101_MOSI,
-        CC1101_CS
-    );
-    ELECHOUSE_cc1101.setGDO(CC1101_GDO0, CC1101_GDO2);
+void enable() {
+    attachInterrupt(digitalPinToInterrupt(PIN_RX_DAT), rf_isr, CHANGE);
+}
 
-    ELECHOUSE_cc1101.Init();
-    ELECHOUSE_cc1101.setCCMode(1);      // use internal config
-    ELECHOUSE_cc1101.setModulation(2);  // ASK/OOK (good for remotes)
-    ELECHOUSE_cc1101.setSyncMode(0);    // no sync word
-    ELECHOUSE_cc1101.setPktFormat(0);   // raw mode
-    ELECHOUSE_cc1101.setMHZ(433.92);    // park here
-    ELECHOUSE_cc1101.setRxBW(58);       // reasonable bandwidth
-    ELECHOUSE_cc1101.setDRate(4.8);     // low-ish data rate
-
-    ELECHOUSE_cc1101.SetRx();
-
-    initialized = true;
-    Serial.println("{\"type\":\"sys\",\"subsystem\":\"rf_recv\",\"state\":\"receiving\"}");
+void disable() {
+    detachInterrupt(digitalPinToInterrupt(PIN_RX_DAT));
+    resetFrame();
 }
 
 void loop() {
-    if (!initialized) return;
+    if (!hasEdge) return;
 
-    // Optional: occasional RSSI debug
-    static unsigned long lastRssi = 0;
-    unsigned long now = millis();
-    if (now - lastRssi > 300) {
-        lastRssi = now;
-        int rssi = ELECHOUSE_cc1101.getRssi();
-        Serial.printf("{\"type\":\"rf\",\"event\":\"rssi\",\"value\":%d}\n", rssi);
+    noInterrupts();
+    uint32_t dt = edgeDt;
+    hasEdge = false;
+    interrupts();
+
+    // --- Frame boundary ---
+    if (dt > FRAME_GAP_US) {
+        finalizeFrame();
+        return;   // DO NOT reset here
     }
 
-    if (ELECHOUSE_cc1101.CheckReceiveFlag()) {
-        uint8_t buffer[64];
-        uint8_t len = ELECHOUSE_cc1101.ReceiveData(buffer);
-
-        Serial.print("{\"type\":\"rf\",\"event\":\"rx\",\"len\":");
-        Serial.print(len);
-        Serial.print(",\"data\":\"");
-
-        for (int i = 0; i < len; i++) {
-            Serial.printf("%02X", buffer[i]);
-        }
-
-        Serial.println("\"}");
+    // --- Overflow ---
+    if (frame.count >= RFFrame::MAX_EDGES) {
+        finalizeFrame();
+        return;   // DO NOT reset here
     }
+
+    // --- Store pulse/gap ---
+    if (frame.count % 2 == 0)
+        frame.pulses[frame.count] = dt;
+    else
+        frame.gaps[frame.count] = dt;
+
+    frame.count++;
 }
 
-void stop() {
-    if (!initialized) return;
-    ELECHOUSE_cc1101.setSidle();
-    initialized = false;
+bool hasFrame() {
+    return frame.valid;
+}
+
+bool getFrame(RFFrame &out) {
+    if (!frame.valid) return false;
+    out = frame;
+    resetFrame();   // <-- Only reset AFTER Pi consumes it
+    return true;
 }
 
 }

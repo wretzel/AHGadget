@@ -1,8 +1,11 @@
 #pragma once
-#include <Arduino.h>
+#include "rf.h"
 
 namespace RFReceiver {
     void init();
+    void enable();
+    void disable();
     void loop();
-    void stop();
+    bool hasFrame();
+    bool getFrame(RFFrame &out);
 }
